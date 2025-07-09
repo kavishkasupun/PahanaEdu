@@ -10,6 +10,7 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import dao.PasswordResetDAO;
 import dao.UserDAO;
 import util.EmailUtility;
 
@@ -40,25 +41,39 @@ public class ForgotPasswordServlet extends HttpServlet {
 	 * @see HttpServlet#doPost(HttpServletRequest request, HttpServletResponse response)
 	 */
 	protected void doPost(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
-		 String email = req.getParameter("email");
-	        String newPass = UUID.randomUUID().toString().substring(0,8);
+        String email = req.getParameter("email");
+        UserDAO userDao = new UserDAO();
+        PasswordResetDAO resetDao = new PasswordResetDAO();
+        
+        // Check if email exists
+        if(userDao.emailExists(email)) {
+            // Generate token
+            String token = UUID.randomUUID().toString();
+            
+            // Store token in database with expiration (1 hour)
+            resetDao.createPasswordResetToken(email, token);
+            
+            // Send email with reset link
+            try {
+                String resetLink = req.getRequestURL().toString()
+                    .replace("ForgotPasswordServlet", "/Auth/resetPassword.jsp") 
+                    + "?token=" + token;
+                
+                String message = "Click the following link to reset your password:\n\n" 
+                    + resetLink + "\n\nThis link will expire in 1 hour.";
+                
+                EmailUtility.sendEmail(email, "Password Reset Request", message);
+                
+                req.setAttribute("message", "Password reset link has been sent to your email.");
+            } catch(Exception e) {
+                e.printStackTrace();
+                req.setAttribute("message", "Error sending email. Please try again.");
+            }
+        } else {
+            req.setAttribute("message", "If this email exists in our system, a reset link will be sent.");
+        }
 
-	        UserDAO dao = new UserDAO();
-	        boolean status = dao.updatePassword(email, newPass);
-
-	        if(status) {
-	            try {
-	                EmailUtility.sendEmail(email, "Password Reset", "Your new password is: "+newPass);
-	            } catch(Exception e) {
-	                e.printStackTrace();
-	            }
-	            req.setAttribute("message", "New password sent to your email.");
-	        } else {
-	            req.setAttribute("message", "Email not found.");
-	        }
-
-	        RequestDispatcher rd = req.getRequestDispatcher("/Auth/forgot_password.jsp");
-	        rd.forward(req, res);
-	}
-
+        RequestDispatcher rd = req.getRequestDispatcher("/Auth/forgot_password.jsp");
+        rd.forward(req, res);
+    }
 }
